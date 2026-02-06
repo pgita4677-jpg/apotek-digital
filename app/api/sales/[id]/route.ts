@@ -2,10 +2,20 @@ import { NextResponse } from "next/server";
 import { pool } from "@/lib/db";
 
 export async function GET(
-  req: Request,
-  { params }: { params: { id: string } }
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const saleId = params.id;
+  // ⬇️ WAJIB await params
+  const { id } = await params;
+  const saleId = Number(id);
+
+  // validasi biar aman
+  if (isNaN(saleId)) {
+    return NextResponse.json(
+      { message: "ID transaksi tidak valid" },
+      { status: 400 }
+    );
+  }
 
   const [rows] = await pool.query(
     `
@@ -15,7 +25,7 @@ export async function GET(
       sd.price,
       (sd.qty * sd.price) AS subtotal
     FROM sales_details sd
-    JOIN medicines m ON m.id = sd.medicine_id
+    JOIN medicines m ON sd.medicine_id = m.id
     WHERE sd.sale_id = ?
     `,
     [saleId]

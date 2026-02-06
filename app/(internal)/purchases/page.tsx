@@ -1,70 +1,124 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
-export default function PembelianPage() {
-  const [showModal, setShowModal] = useState(false);
+type PurchaseItem = {
+  name: string;
+  qty: number;
+  price: number;
+};
+
+type Purchase = {
+  id: number;
+  date: string;
+  supplier: string;
+  total: number;
+  items: PurchaseItem[];
+};
+
+export default function PurchasesPage() {
+  const [purchases, setPurchases] = useState<Purchase[]>([]);
+  const [selected, setSelected] = useState<Purchase | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("http://localhost:3000/api/purchases")
+      .then((res) => res.json())
+      .then((data) => {
+        setPurchases(data);
+        setLoading(false);
+      })
+      .catch((err) => {
+        console.error("Gagal ambil data purchases:", err);
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) return <p>Loading data purchases...</p>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Transaksi Pembelian</h1>
-        <button
-          onClick={() => setShowModal(true)}
-          className="bg-sky-500 text-white px-4 py-2 rounded-lg"
-        >
-          + Tambah Pembelian
-        </button>
-      </div>
+    <div style={{ padding: 24 }}>
+      <h1>Purchases</h1>
+      <p>Riwayat Pembelian</p>
 
-      <div className="bg-white rounded-xl shadow">
-        <table className="w-full text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="p-3 text-left">Tanggal</th>
-              <th className="p-3 text-left">Supplier</th>
-              <th className="p-3 text-left">Total</th>
+      <table width="100%" border={1} cellPadding={8}>
+        <thead>
+          <tr>
+            <th>No</th>
+            <th>Tanggal</th>
+            <th>Supplier</th>
+            <th>Total</th>
+            <th>Aksi</th>
+          </tr>
+        </thead>
+        <tbody>
+          {purchases.map((p, i) => (
+            <tr key={p.id}>
+              <td>{i + 1}</td>
+              <td>{p.date}</td>
+              <td>{p.supplier}</td>
+              <td>Rp {p.total.toLocaleString("id-ID")}</td>
+              <td>
+                <button onClick={() => setSelected(p)}>
+                  Detail
+                </button>
+              </td>
             </tr>
-          </thead>
-          <tbody>
-            <tr className="border-t">
-              <td className="p-3">2025-02-01</td>
-              <td className="p-3">PT Sehat Selalu</td>
-              <td className="p-3">Rp 1.200.000</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
 
-      {/* MODAL */}
-      {showModal && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center">
-          <div className="bg-white p-6 rounded-xl w-full max-w-md">
-            <h2 className="text-lg font-bold mb-4">Tambah Pembelian</h2>
+      {/* MODAL DETAIL */}
+      {selected && (
+        <div style={overlay}>
+          <div style={modal}>
+            <h3>Detail Pembelian</h3>
+            <p><b>Tanggal:</b> {selected.date}</p>
+            <p><b>Supplier:</b> {selected.supplier}</p>
 
-            <input
-              className="w-full border px-3 py-2 rounded mb-3"
-              placeholder="Supplier"
-            />
-            <input
-              type="date"
-              className="w-full border px-3 py-2 rounded mb-3"
-            />
-            <input
-              type="number"
-              className="w-full border px-3 py-2 rounded mb-3"
-              placeholder="Total"
-            />
+            <table width="100%" border={1} cellPadding={6}>
+              <thead>
+                <tr>
+                  <th>Barang</th>
+                  <th>Qty</th>
+                  <th>Harga</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selected.items.map((item, i) => (
+                  <tr key={i}>
+                    <td>{item.name}</td>
+                    <td>{item.qty}</td>
+                    <td>Rp {item.price.toLocaleString("id-ID")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
 
-            <div className="flex justify-end gap-3">
-              <button onClick={() => setShowModal(false)}>Batal</button>
-              <button className="bg-sky-500 text-white px-4 py-2 rounded">
-                Simpan
-              </button>
-            </div>
+            <p style={{ marginTop: 10 }}>
+              <b>Total:</b> Rp {selected.total.toLocaleString("id-ID")}
+            </p>
+
+            <button onClick={() => setSelected(null)}>Tutup</button>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+const overlay: React.CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "rgba(0,0,0,0.5)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const modal: React.CSSProperties = {
+  background: "#fff",
+  padding: 20,
+  width: 420,
+  borderRadius: 6,
+};

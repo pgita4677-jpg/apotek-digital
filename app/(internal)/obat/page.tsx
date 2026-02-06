@@ -2,262 +2,277 @@
 
 import { useEffect, useState } from "react";
 
-type Medicine = {
+type Obat = {
   id: number;
+  code: string;
   name: string;
+  category: string;
   price: number;
   stock: number;
+  expired_date: string;
 };
 
-type CartItem = Medicine & {
-  qty: number;
-};
+const ITEMS_PER_PAGE = 5;
 
-type Sale = {
-  id: number;
-  date: string;
-  total: number;
-};
+export default function ObatPage() {
+  const [data, setData] = useState<Obat[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
 
-type SaleDetail = {
-  name: string;
-  qty: number;
-  price: number;
-  subtotal: number;
-};
+  const [form, setForm] = useState({
+    nama: "",
+    kategori: "",
+    harga: "",
+    stok: "",
+    expired: "",
+  });
 
-export default function SalesPage() {
-  const [medicines, setMedicines] = useState<Medicine[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [search, setSearch] = useState("");
-  const [paid, setPaid] = useState(0);
-
-  const [salesHistory, setSalesHistory] = useState<Sale[]>([]);
-  const [selectedSale, setSelectedSale] = useState<Sale | null>(null);
-  const [saleDetails, setSaleDetails] = useState<SaleDetail[]>([]);
-
-  const userId = 1;
-
-  // =====================
-  // FETCH DATA
-  // =====================
-  const fetchMedicines = async () => {
-    const res = await fetch("/api/medicines");
-    const data = await res.json();
-    setMedicines(data);
-  };
-
-  const fetchSalesHistory = async () => {
-    const res = await fetch("/api/sales");
-    const data = await res.json();
-    setSalesHistory(data);
-  };
-
-  const fetchSaleDetails = async (saleId: number) => {
-    const res = await fetch(`/api/sales/${saleId}`);
-    const data = await res.json();
-    setSaleDetails(data);
+  // 🔄 Ambil data dari database
+  const fetchData = async () => {
+    const res = await fetch("/api/obat");
+    const result = await res.json();
+    setData(result);
   };
 
   useEffect(() => {
-    fetchMedicines();
-    fetchSalesHistory();
+    fetchData();
   }, []);
 
-  // =====================
-  // CART
-  // =====================
-  const addToCart = (med: Medicine) => {
-    setCart(prev => {
-      const exist = prev.find(i => i.id === med.id);
-      if (exist) {
-        return prev.map(i =>
-          i.id === med.id ? { ...i, qty: i.qty + 1 } : i
-        );
-      }
-      return [...prev, { ...med, qty: 1 }];
-    });
-  };
-
-  const total = cart.reduce(
-    (sum, item) => sum + item.price * item.qty,
-    0
+  // 📄 Pagination
+  const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
+  const paginatedData = data.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
   );
 
-  const change = paid - total;
+  // 💾 Simpan data ke database
+  const handleSubmit = async () => {
+    if (
+      !form.nama ||
+      !form.kategori ||
+      !form.harga ||
+      !form.stok ||
+      !form.expired
+    ) {
+      alert("Semua field wajib diisi");
+      return;
+    }
 
-  // =====================
-  // SAVE TRANSACTION
-  // =====================
-  const saveTransaction = async () => {
-    if (cart.length === 0) return alert("Cart kosong");
-    if (paid < total) return alert("Uang bayar kurang");
-
-    const res = await fetch("/api/sales", {
+    const res = await fetch("/api/obat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        user_id: userId,
-        total,
-        cart,
+        name: form.nama,
+        category: form.kategori,
+        price: Number(form.harga),
+        stock: Number(form.stok),
+        expired_date: form.expired,
       }),
     });
 
-    if (res.ok) {
-      alert("Transaksi berhasil");
-      setCart([]);
-      setPaid(0);
-      fetchMedicines();
-      fetchSalesHistory();
+    if (!res.ok) {
+      alert("Gagal menyimpan data");
+      return;
     }
+
+    await fetchData();
+    setShowModal(false);
+    setCurrentPage(1);
+
+    setForm({
+      nama: "",
+      kategori: "",
+      harga: "",
+      stok: "",
+      expired: "",
+    });
   };
 
   return (
-    <div className="p-6 space-y-10">
-      {/* ================= TRANSAKSI ================= */}
+    <div className="relative space-y-6">
+
+      {/* HEADER */}
       <div>
-        <h2 className="text-xl font-bold mb-4">🧾 Penjualan</h2>
-
-        <div className="grid grid-cols-3 gap-6">
-          {/* LEFT */}
-          <div className="col-span-2">
-            <input
-              className="w-full p-2 border rounded mb-4"
-              placeholder="Cari obat..."
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-            />
-
-            <div className="grid grid-cols-3 gap-4">
-              {medicines
-                .filter(m =>
-                  m.name.toLowerCase().includes(search.toLowerCase())
-                )
-                .map(m => (
-                  <div
-                    key={m.id}
-                    className="border rounded p-3 text-center"
-                  >
-                    <p className="font-semibold">{m.name}</p>
-                    <p>Rp {m.price}</p>
-                    <p className="text-xs text-gray-500">
-                      Stok: {m.stock}
-                    </p>
-                    <button
-                      onClick={() => addToCart(m)}
-                      className="mt-2 w-full bg-blue-500 text-white rounded py-1"
-                    >
-                      + Tambah
-                    </button>
-                  </div>
-                ))}
-            </div>
-          </div>
-
-          {/* RIGHT */}
-          <div className="border rounded p-4">
-            <h3 className="font-semibold mb-2">Keranjang</h3>
-
-            <table className="w-full text-sm">
-              <tbody>
-                {cart.map(item => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>{item.qty}</td>
-                    <td>Rp {item.qty * item.price}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <p className="mt-2 font-bold">Total: Rp {total}</p>
-
-            <input
-              type="number"
-              placeholder="Uang bayar"
-              value={paid}
-              onChange={e => setPaid(Number(e.target.value))}
-              className="w-full p-2 border rounded mt-2"
-            />
-
-            <p className="mt-1">
-              Kembalian: Rp {change > 0 ? change : 0}
-            </p>
-
-            <button
-              onClick={saveTransaction}
-              className="mt-3 w-full bg-green-600 text-white py-2 rounded"
-            >
-              Simpan Transaksi
-            </button>
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold text-gray-800">Data Obat</h1>
+        <p className="text-gray-500">Kelola data obat apotek</p>
       </div>
 
-      {/* ================= RIWAYAT ================= */}
-      <div>
-        <h3 className="text-lg font-bold mb-3">📜 Riwayat Transaksi</h3>
+      {/* BUTTON */}
+      <button
+        onClick={() => setShowModal(true)}
+        className="bg-sky-600 hover:bg-sky-700 text-white px-5 py-2 rounded-lg font-medium"
+      >
+        + Tambah Obat
+      </button>
 
-        <table className="w-full border text-sm">
-          <thead className="bg-gray-100">
+      {/* TABLE */}
+      <div className="bg-white rounded-xl shadow overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-gray-100 text-gray-600">
             <tr>
-              <th className="border p-2">ID</th>
-              <th className="border p-2">Tanggal</th>
-              <th className="border p-2">Total</th>
+              <th className="p-3 text-left">Kode</th>
+              <th className="p-3 text-left">Nama</th>
+              <th className="p-3 text-left">Kategori</th>
+              <th className="p-3 text-left">Harga</th>
+              <th className="p-3 text-left">Stok</th>
+              <th className="p-3 text-left">Expired</th>
             </tr>
           </thead>
+
           <tbody>
-            {salesHistory.map(sale => (
-              <tr
-                key={sale.id}
-                className="cursor-pointer hover:bg-blue-50"
-                onClick={() => {
-                  setSelectedSale(sale);
-                  fetchSaleDetails(sale.id);
-                }}
-              >
-                <td className="border p-2">#{sale.id}</td>
-                <td className="border p-2">
-                  {new Date(sale.date).toLocaleString()}
-                </td>
-                <td className="border p-2 font-semibold">
-                  Rp {sale.total}
+            {paginatedData.length === 0 ? (
+              <tr>
+                <td colSpan={6} className="p-6 text-center text-gray-400">
+                  Belum ada data obat
                 </td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* ================= DETAIL ================= */}
-      {selectedSale && (
-        <div className="border rounded p-4 bg-gray-50">
-          <h4 className="font-bold mb-2">
-            Detail Transaksi #{selectedSale.id}
-          </h4>
-
-          <table className="w-full text-sm border">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="border p-2">Obat</th>
-                <th className="border p-2">Qty</th>
-                <th className="border p-2">Harga</th>
-                <th className="border p-2">Subtotal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {saleDetails.map((d, i) => (
-                <tr key={i}>
-                  <td className="border p-2">{d.name}</td>
-                  <td className="border p-2">{d.qty}</td>
-                  <td className="border p-2">Rp {d.price}</td>
-                  <td className="border p-2 font-semibold">
-                    Rp {d.subtotal}
+            ) : (
+              paginatedData.map((obat) => (
+                <tr key={obat.id} className="border-t">
+                  <td className="p-3">{obat.code}</td>
+                  <td className="p-3">{obat.name}</td>
+                  <td className="p-3">{obat.category}</td>
+                  <td className="p-3">
+                    Rp {obat.price.toLocaleString("id-ID")}
+                  </td>
+                  <td className="p-3">{obat.stock}</td>
+                  <td className="p-3 text-red-500">
+                    {obat.expired_date}
                   </td>
                 </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+
+        {/* PAGINATION */}
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center px-4 py-3 border-t text-sm">
+            <span className="text-gray-500">
+              Halaman {currentPage} dari {totalPages}
+            </span>
+
+            <div className="flex gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                disabled={currentPage === 1}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Prev
+              </button>
+
+              {Array.from({ length: totalPages }).map((_, i) => (
+                <button
+                  key={i}
+                  onClick={() => setCurrentPage(i + 1)}
+                  className={`px-3 py-1 border rounded ${
+                    currentPage === i + 1
+                      ? "bg-sky-600 text-white"
+                      : "hover:bg-gray-100"
+                  }`}
+                >
+                  {i + 1}
+                </button>
               ))}
-            </tbody>
-          </table>
+
+              <button
+                onClick={() =>
+                  setCurrentPage((p) => Math.min(p + 1, totalPages))
+                }
+                disabled={currentPage === totalPages}
+                className="px-3 py-1 border rounded disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* MODAL */}
+      {showModal && (
+        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
+
+            <div className="bg-gradient-to-r from-sky-600 to-emerald-500 px-6 py-5">
+              <h2 className="text-xl font-bold text-white">
+                Tambah Data Obat
+              </h2>
+              <p className="text-sm text-sky-100">
+                Lengkapi informasi obat
+              </p>
+            </div>
+
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <input
+                placeholder="Nama Obat"
+                value={form.nama}
+                onChange={(e) =>
+                  setForm({ ...form, nama: e.target.value })
+                }
+                className="border px-4 py-2 rounded-lg"
+              />
+
+              <select
+                value={form.kategori}
+                onChange={(e) =>
+                  setForm({ ...form, kategori: e.target.value })
+                }
+                className="border px-4 py-2 rounded-lg"
+              >
+                <option value="">Pilih Kategori</option>
+                <option>Tablet / Kapsul / Pil / Kaplet</option>
+                <option>Cair (Sirup / Tetes)</option>
+                <option>Semi Padat (Salep / Krim / Gel)</option>
+                <option>Gas / Inhalasi</option>
+              </select>
+
+              <input
+                type="number"
+                placeholder="Harga"
+                value={form.harga}
+                onChange={(e) =>
+                  setForm({ ...form, harga: e.target.value })
+                }
+                className="border px-4 py-2 rounded-lg"
+              />
+
+              <input
+                type="number"
+                placeholder="Stok"
+                value={form.stok}
+                onChange={(e) =>
+                  setForm({ ...form, stok: e.target.value })
+                }
+                className="border px-4 py-2 rounded-lg"
+              />
+
+              <input
+                type="date"
+                value={form.expired}
+                onChange={(e) =>
+                  setForm({ ...form, expired: e.target.value })
+                }
+                className="border px-4 py-2 rounded-lg md:col-span-2"
+              />
+            </div>
+
+            <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
+              <button
+                onClick={() => setShowModal(false)}
+                className="px-4 py-2 bg-gray-200 rounded-lg"
+              >
+                Batal
+              </button>
+              <button
+                onClick={handleSubmit}
+                className="px-4 py-2 bg-sky-600 text-white rounded-lg"
+              >
+                Simpan
+              </button>
+            </div>
+
+          </div>
         </div>
       )}
     </div>
