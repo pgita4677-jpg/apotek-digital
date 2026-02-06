@@ -65,18 +65,41 @@ export default function SalesPage() {
   }, []);
 
   // =====================
-  // CART
+  // CART LOGIC
   // =====================
   const addToCart = (med: Medicine) => {
     setCart(prev => {
       const exist = prev.find(i => i.id === med.id);
+
       if (exist) {
+        if (exist.qty >= med.stock) return prev; // cegah melebihi stok
+
         return prev.map(i =>
           i.id === med.id ? { ...i, qty: i.qty + 1 } : i
         );
       }
+
       return [...prev, { ...med, qty: 1 }];
     });
+  };
+
+  const updateQty = (id: number, delta: number) => {
+    setCart(prev =>
+      prev
+        .map(item =>
+          item.id === id ? { ...item, qty: item.qty + delta } : item
+        )
+        .filter(item => item.qty > 0)
+    );
+  };
+
+  const removeFromCart = (id: number) => {
+    setCart(prev => prev.filter(item => item.id !== id));
+  };
+
+  const clearCart = () => {
+    setCart([]);
+    setPaid(0);
   };
 
   const total = cart.reduce(
@@ -90,7 +113,7 @@ export default function SalesPage() {
   // SAVE TRANSACTION
   // =====================
   const saveTransaction = async () => {
-    if (cart.length === 0) return alert("Cart kosong");
+    if (cart.length === 0) return alert("Keranjang kosong");
     if (paid < total) return alert("Uang bayar kurang");
 
     const res = await fetch("/api/sales", {
@@ -105,8 +128,7 @@ export default function SalesPage() {
 
     if (res.ok) {
       alert("Transaksi berhasil");
-      setCart([]);
-      setPaid(0);
+      clearCart();
       fetchMedicines();
       fetchSalesHistory();
     }
@@ -145,7 +167,8 @@ export default function SalesPage() {
                     </p>
                     <button
                       onClick={() => addToCart(m)}
-                      className="mt-2 w-full bg-blue-500 text-white rounded py-1"
+                      disabled={m.stock === 0}
+                      className="mt-2 w-full bg-blue-500 text-white rounded py-1 disabled:bg-gray-300"
                     >
                       + Tambah
                     </button>
@@ -156,15 +179,44 @@ export default function SalesPage() {
 
           {/* RIGHT */}
           <div className="border rounded p-4">
-            <h3 className="font-semibold mb-2">Keranjang</h3>
+            <h3 className="font-semibold mb-2">🛒 Keranjang</h3>
+
+            {cart.length === 0 && (
+              <p className="text-sm text-gray-500">
+                Keranjang masih kosong
+              </p>
+            )}
 
             <table className="w-full text-sm">
               <tbody>
                 {cart.map(item => (
                   <tr key={item.id}>
                     <td>{item.name}</td>
-                    <td>{item.qty}</td>
+                    <td className="flex items-center gap-2">
+                      <button
+                        onClick={() => updateQty(item.id, -1)}
+                        className="px-2 border rounded"
+                      >
+                        −
+                      </button>
+                      {item.qty}
+                      <button
+                        onClick={() => updateQty(item.id, 1)}
+                        className="px-2 border rounded"
+                        disabled={item.qty >= item.stock}
+                      >
+                        +
+                      </button>
+                    </td>
                     <td>Rp {item.qty * item.price}</td>
+                    <td>
+                      <button
+                        onClick={() => removeFromCart(item.id)}
+                        className="text-red-500"
+                      >
+                        ❌
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -189,6 +241,13 @@ export default function SalesPage() {
               className="mt-3 w-full bg-green-600 text-white py-2 rounded"
             >
               Simpan Transaksi
+            </button>
+
+            <button
+              onClick={clearCart}
+              className="mt-2 w-full text-sm text-red-600 underline"
+            >
+              Batalkan / Kosongkan Keranjang
             </button>
           </div>
         </div>
@@ -218,7 +277,7 @@ export default function SalesPage() {
               >
                 <td className="border p-2">#{sale.id}</td>
                 <td className="border p-2">
-                  {new Date(sale.date).toLocaleString()}
+                  {new Date(sale.date).toLocaleString("id-ID")}
                 </td>
                 <td className="border p-2 font-semibold">
                   Rp {sale.total}
