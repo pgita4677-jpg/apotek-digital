@@ -16,10 +16,9 @@ const ITEMS_PER_PAGE = 5;
 
 export default function ObatPage() {
   const [data, setData] = useState<Obat[]>([]);
+  const [showModal, setShowModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // ===== tambah obat =====
-  const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     nama: "",
     kategori: "",
@@ -28,14 +27,7 @@ export default function ObatPage() {
     expired: "",
   });
 
-  // ===== tambah stok =====
-  const [showStockModal, setShowStockModal] = useState(false);
-  const [selectedObat, setSelectedObat] = useState<Obat | null>(null);
-  const [addStock, setAddStock] = useState("");
-
-  // =====================
-  // FETCH DATA
-  // =====================
+  // 🔄 Ambil data dari database
   const fetchData = async () => {
     const res = await fetch("/api/obat");
     const result = await res.json();
@@ -46,18 +38,14 @@ export default function ObatPage() {
     fetchData();
   }, []);
 
-  // =====================
-  // PAGINATION
-  // =====================
+  // 📄 Pagination
   const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
   const paginatedData = data.slice(
     (currentPage - 1) * ITEMS_PER_PAGE,
     currentPage * ITEMS_PER_PAGE
   );
 
-  // =====================
-  // TAMBAH OBAT BARU
-  // =====================
+  // 💾 Simpan data ke database
   const handleSubmit = async () => {
     if (
       !form.nama ||
@@ -70,13 +58,22 @@ export default function ObatPage() {
       return;
     }
 
+    // ✅ FIX: generate kode obat dari kode TERAKHIR yang ADA
+    const lastCodeNumber = data
+      .filter((o) => o.code)
+      .map((o) => Number(o.code.replace("OBT", "")))
+      .sort((a, b) => b - a)[0] || 0;
+
+    const kodeObat = `OBT${String(lastCodeNumber + 1).padStart(4, "0")}`;
+
     const res = await fetch("/api/obat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        code: kodeObat, // 🔹 tidak akan NULL lagi
         name: form.nama,
         category: form.kategori,
-        price: Number(form.harga),
+        price: Math.floor(Number(form.harga)), // 🔹 tanpa koma
         stock: Number(form.stok),
         expired_date: form.expired,
       }),
@@ -90,6 +87,7 @@ export default function ObatPage() {
     await fetchData();
     setShowModal(false);
     setCurrentPage(1);
+
     setForm({
       nama: "",
       kategori: "",
@@ -99,36 +97,9 @@ export default function ObatPage() {
     });
   };
 
-  // =====================
-  // TAMBAH STOK OBAT
-  // =====================
-  const handleAddStock = async () => {
-    if (!addStock || Number(addStock) <= 0) {
-      alert("Jumlah stok tidak valid");
-      return;
-    }
-
-    const res = await fetch(`/api/obat/${selectedObat?.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        add_stock: Number(addStock),
-      }),
-    });
-
-    if (!res.ok) {
-      alert("Gagal menambah stok");
-      return;
-    }
-
-    await fetchData();
-    setShowStockModal(false);
-    setSelectedObat(null);
-    setAddStock("");
-  };
-
   return (
     <div className="relative space-y-6">
+
       {/* HEADER */}
       <div>
         <h1 className="text-3xl font-bold text-gray-800">Data Obat</h1>
@@ -154,14 +125,13 @@ export default function ObatPage() {
               <th className="p-3 text-left">Harga</th>
               <th className="p-3 text-left">Stok</th>
               <th className="p-3 text-left">Expired</th>
-              <th className="p-3 text-left">Aksi</th>
             </tr>
           </thead>
 
           <tbody>
             {paginatedData.length === 0 ? (
               <tr>
-                <td colSpan={7} className="p-6 text-center text-gray-400">
+                <td colSpan={6} className="p-6 text-center text-gray-400">
                   Belum ada data obat
                 </td>
               </tr>
@@ -177,18 +147,6 @@ export default function ObatPage() {
                   <td className="p-3">{obat.stock}</td>
                   <td className="p-3 text-red-500">
                     {obat.expired_date}
-                  </td>
-                  <td className="p-3">
-                    <button
-                      onClick={() => {
-                        setSelectedObat(obat);
-                        setAddStock("");
-                        setShowStockModal(true);
-                      }}
-                      className="px-3 py-1 bg-emerald-600 text-white rounded hover:bg-emerald-700"
-                    >
-                      ➕ Stok
-                    </button>
                   </td>
                 </tr>
               ))
@@ -228,9 +186,7 @@ export default function ObatPage() {
 
               <button
                 onClick={() =>
-                  setCurrentPage((p) =>
-                    Math.min(p + 1, totalPages)
-                  )
+                  setCurrentPage((p) => Math.min(p + 1, totalPages))
                 }
                 disabled={currentPage === totalPages}
                 className="px-3 py-1 border rounded disabled:opacity-50"
@@ -242,14 +198,18 @@ export default function ObatPage() {
         )}
       </div>
 
-      {/* MODAL TAMBAH OBAT */}
+      {/* MODAL */}
       {showModal && (
         <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden">
+
             <div className="bg-gradient-to-r from-sky-600 to-emerald-500 px-6 py-5">
               <h2 className="text-xl font-bold text-white">
                 Tambah Data Obat
               </h2>
+              <p className="text-sm text-sky-100">
+                Lengkapi informasi obat
+              </p>
             </div>
 
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -288,7 +248,7 @@ export default function ObatPage() {
 
               <input
                 type="number"
-                placeholder="Stok Awal"
+                placeholder="Stok"
                 value={form.stok}
                 onChange={(e) =>
                   setForm({ ...form, stok: e.target.value })
@@ -320,54 +280,7 @@ export default function ObatPage() {
                 Simpan
               </button>
             </div>
-          </div>
-        </div>
-      )}
 
-      {/* MODAL TAMBAH STOK */}
-      {showStockModal && selectedObat && (
-        <div className="absolute inset-0 bg-black/30 flex items-center justify-center z-40">
-          <div className="bg-white w-full max-w-md rounded-xl shadow-xl">
-            <div className="bg-emerald-600 px-6 py-4">
-              <h2 className="text-lg font-bold text-white">
-                Tambah Stok Obat
-              </h2>
-            </div>
-
-            <div className="p-6 space-y-4">
-              <input
-                disabled
-                value={selectedObat.name}
-                className="w-full border px-4 py-2 rounded bg-gray-100"
-              />
-              <input
-                disabled
-                value={`Stok saat ini: ${selectedObat.stock}`}
-                className="w-full border px-4 py-2 rounded bg-gray-100"
-              />
-              <input
-                type="number"
-                placeholder="Jumlah tambahan"
-                value={addStock}
-                onChange={(e) => setAddStock(e.target.value)}
-                className="w-full border px-4 py-2 rounded"
-              />
-            </div>
-
-            <div className="bg-gray-50 px-6 py-4 flex justify-end gap-3">
-              <button
-                onClick={() => setShowStockModal(false)}
-                className="px-4 py-2 bg-gray-200 rounded"
-              >
-                Batal
-              </button>
-              <button
-                onClick={handleAddStock}
-                className="px-4 py-2 bg-emerald-600 text-white rounded"
-              >
-                Simpan
-              </button>
-            </div>
           </div>
         </div>
       )}

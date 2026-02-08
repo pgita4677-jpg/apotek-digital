@@ -1,124 +1,77 @@
-"use client";
+import { NextResponse } from "next/server";
+import mysql from "mysql2/promise";
 
-import { useEffect, useState } from "react";
+const pool = mysql.createPool({
+  host: process.env.MYSQL_HOST,
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_DATABASE,
+});
 
-type PurchaseItem = {
-  name: string;
-  qty: number;
-  price: number;
-};
+export async function POST(req: Request) {
+  const { supplier_id, date, details } = await req.json();
 
-type Purchase = {
-  id: number;
-  date: string;
-  supplier: string;
-  total: number;
-  items: PurchaseItem[];
-};
+  if (!supplier_id || !date || !details?.length) {
+    return NextResponse.json(
+      { message: "Data tidak lengkap" },
+      { status: 400 }
+    );
+  }
 
-export default function PurchasesPage() {
-  const [purchases, setPurchases] = useState<Purchase[]>([]);
-  const [selected, setSelected] = useState<Purchase | null>(null);
-  const [loading, setLoading] = useState(true);
+  const conn = await pool.getConnection();
 
-  useEffect(() => {
-    fetch("http://localhost:3000/api/purchases")
-      .then((res) => res.json())
-      .then((data) => {
-        setPurchases(data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error("Gagal ambil data purchases:", err);
-        setLoading(false);
-      });
-  }, []);
+  try {
+    await conn.beginTransaction();
 
-  if (loading) return <p>Loading data purchases...</p>;
+    // 1. insert purchases
+    const [purchase] = await conn.query<any>(
+      "INSERT INTO purchases (supplier_id, date, total) VALUES (?, ?, 0)",
+      [supplier_id, date]
+    );
 
-  return (
-    <div style={{ padding: 24 }}>
-      <h1>Purchases</h1>
-      <p>Riwayat Pembelian</p>
+    const purchaseId = purchase.insertId;
+    let total = 0;
 
-      <table width="100%" border={1} cellPadding={8}>
-        <thead>
-          <tr>
-            <th>No</th>
-            <th>Tanggal</th>
-            <th>Supplier</th>
-            <th>Total</th>
-            <th>Aksi</th>
-          </tr>
-        </thead>
-        <tbody>
-          {purchases.map((p, i) => (
-            <tr key={p.id}>
-              <td>{i + 1}</td>
-              <td>{p.date}</td>
-              <td>{p.supplier}</td>
-              <td>Rp {p.total.toLocaleString("id-ID")}</td>
-              <td>
-                <button onClick={() => setSelected(p)}>
-                  Detail
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    // 2. insert details + update stock
+    for (const d of details) {
+      if (!d.medicine_id || d.qty <= 0 || d.price <= 0) {
+        throw new Error("Detail purchase tidak valid");
+      }
 
-      {/* MODAL DETAIL */}
-      {selected && (
-        <div style={overlay}>
-          <div style={modal}>
-            <h3>Detail Pembelian</h3>
-            <p><b>Tanggal:</b> {selected.date}</p>
-            <p><b>Supplier:</b> {selected.supplier}</p>
+      await conn.query(
+        `INSERT INTO purchase_details 
+         (purchase_id, medicine_id, qty, price)
+         VALUES (?, ?, ?, ?)`,
+        [purchaseId, d.medicine_id, d.qty, d.price]
+      );
 
-            <table width="100%" border={1} cellPadding={6}>
-              <thead>
-                <tr>
-                  <th>Barang</th>
-                  <th>Qty</th>
-                  <th>Harga</th>
-                </tr>
-              </thead>
-              <tbody>
-                {selected.items.map((item, i) => (
-                  <tr key={i}>
-                    <td>{item.name}</td>
-                    <td>{item.qty}</td>
-                    <td>Rp {item.price.toLocaleString("id-ID")}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      // 🔥 UPDATE STOK OBAT
+      await conn.query(
+        `UPDATE medicines 
+         SET stock = stock + ? 
+         WHERE id = ?`,
+        [d.qty, d.medicine_id]
+      );
 
-            <p style={{ marginTop: 10 }}>
-              <b>Total:</b> Rp {selected.total.toLocaleString("id-ID")}
-            </p>
+      total += d.qty * d.price;
+    }
 
-            <button onClick={() => setSelected(null)}>Tutup</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
+    // 3. update total
+    await conn.query(
+      "UPDATE purchases SET total = ? WHERE id = ?",
+      [total, purchaseId]
+    );
+
+    await conn.commit();
+
+    return NextResponse.json({ message: "Purchase berhasil" });
+  } catch (err: any) {
+    await conn.rollback();
+    return NextResponse.json(
+      { message: err.message },
+      { status: 400 }
+    );
+  } finally {
+    conn.release();
+  }
 }
-
-const overlay: React.CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  background: "rgba(0,0,0,0.5)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const modal: React.CSSProperties = {
-  background: "#fff",
-  padding: 20,
-  width: 420,
-  borderRadius: 6,
-};

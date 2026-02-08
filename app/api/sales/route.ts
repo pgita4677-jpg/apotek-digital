@@ -7,7 +7,11 @@ import { pool } from "@/lib/db";
 export async function GET() {
   try {
     const [rows]: any = await pool.query(`
-      SELECT id, user_id, date, total
+      SELECT 
+        id,
+        user_id,
+        date,
+        CAST(total AS UNSIGNED) AS total
       FROM sales
       ORDER BY date DESC
     `);
@@ -26,65 +30,84 @@ export async function GET() {
 // SIMPAN TRANSAKSI
 // =====================
 export async function POST(req: Request) {
+  const conn = await pool.getConnection();
+
   try {
     const body = await req.json();
-    console.log("DATA MASUK:", body);
-
     const { user_id, cart, total } = body;
 
-    // VALIDASI WAJIB
-    if (!user_id || !cart || cart.length === 0 || !total) {
+    // ✅ VALIDASI AMAN
+    if (
+      user_id === undefined ||
+      !Array.isArray(cart) ||
+      cart.length === 0 ||
+      total === undefined
+    ) {
       return NextResponse.json(
         { message: "Data transaksi tidak lengkap" },
         { status: 400 }
       );
     }
 
-    const conn = await pool.getConnection();
+    await conn.beginTransaction();
 
-    try {
-      await conn.beginTransaction();
+    // 1️⃣ INSERT SALES
+    const [saleResult]: any = await conn.query(
+      "INSERT INTO sales (user_id, date, total) VALUES (?, NOW(), ?)",
+      [user_id, Number(total)]
+    );
 
-      // INSERT SALES
-      const [saleResult]: any = await conn.query(
-        "INSERT INTO sales (user_id, date, total) VALUES (?, NOW(), ?)",
-        [user_id, total]
-      );
+    const saleId = saleResult.insertId;
 
-      const saleId = saleResult.insertId;
+    // 2️⃣ DETAIL + STOK (LOCK)
+    for (const item of cart) {
+      const qty = Number(item.qty);
+      const price = Number(item.price);
 
-      // INSERT DETAIL + UPDATE STOK
-      for (const item of cart) {
-        await conn.query(
-          "INSERT INTO sales_details (sale_id, medicine_id, qty, price) VALUES (?, ?, ?, ?)",
-          [saleId, item.id, item.qty, item.price]
-        );
-
-        await conn.query(
-          "UPDATE medicines SET stock = stock - ? WHERE id = ?",
-          [item.qty, item.id]
-        );
+      if (qty <= 0 || price <= 0) {
+        throw new Error("Qty atau harga tidak valid");
       }
 
-      await conn.commit();
-      conn.release();
+      // 🔒 LOCK STOK
+      const [[med]]: any = await conn.query(
+        "SELECT stock FROM medicines WHERE id = ? FOR UPDATE",
+        [item.id]
+      );
 
-      return NextResponse.json({ success: true });
-    } catch (err) {
-      await conn.rollback();
-      conn.release();
-      console.error("TRANSACTION ERROR:", err);
+      if (!med || med.stock < qty) {
+        throw new Error("Stok tidak mencukupi");
+      }
 
-      return NextResponse.json(
-        { message: "Gagal menyimpan transaksi" },
-        { status: 500 }
+      // INSERT DETAIL (TANPA subtotal)
+      await conn.query(
+        `INSERT INTO sales_details 
+         (sale_id, medicine_id, qty, price)
+         VALUES (?, ?, ?, ?)`,
+        [saleId, item.id, qty, price]
+      );
+
+      // UPDATE STOK
+      await conn.query(
+        "UPDATE medicines SET stock = stock - ? WHERE id = ?",
+        [qty, item.id]
       );
     }
-  } catch (err) {
+
+    await conn.commit();
+
+    return NextResponse.json({
+      success: true,
+      sale_id: saleId,
+    });
+  } catch (err: any) {
+    await conn.rollback();
     console.error("POST SALES ERROR:", err);
+
     return NextResponse.json(
-      { message: "Request tidak valid" },
-      { status: 400 }
+      { message: err.message || "Gagal menyimpan transaksi" },
+      { status: 500 }
     );
+  } finally {
+    conn.release();
   }
 }

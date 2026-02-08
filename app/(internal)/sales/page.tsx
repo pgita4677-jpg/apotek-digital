@@ -65,41 +65,40 @@ export default function SalesPage() {
   }, []);
 
   // =====================
-  // CART LOGIC
+  // CART HANDLER
   // =====================
   const addToCart = (med: Medicine) => {
     setCart(prev => {
       const exist = prev.find(i => i.id === med.id);
-
       if (exist) {
-        if (exist.qty >= med.stock) return prev; // cegah melebihi stok
-
         return prev.map(i =>
           i.id === med.id ? { ...i, qty: i.qty + 1 } : i
         );
       }
-
       return [...prev, { ...med, qty: 1 }];
     });
   };
 
-  const updateQty = (id: number, delta: number) => {
+  const increaseQty = (id: number) => {
     setCart(prev =>
-      prev
-        .map(item =>
-          item.id === id ? { ...item, qty: item.qty + delta } : item
-        )
-        .filter(item => item.qty > 0)
+      prev.map(i =>
+        i.id === id ? { ...i, qty: i.qty + 1 } : i
+      )
     );
   };
 
-  const removeFromCart = (id: number) => {
-    setCart(prev => prev.filter(item => item.id !== id));
+  const decreaseQty = (id: number) => {
+    setCart(prev =>
+      prev
+        .map(i =>
+          i.id === id ? { ...i, qty: i.qty - 1 } : i
+        )
+        .filter(i => i.qty > 0)
+    );
   };
 
-  const clearCart = () => {
-    setCart([]);
-    setPaid(0);
+  const removeItem = (id: number) => {
+    setCart(prev => prev.filter(i => i.id !== id));
   };
 
   const total = cart.reduce(
@@ -113,7 +112,7 @@ export default function SalesPage() {
   // SAVE TRANSACTION
   // =====================
   const saveTransaction = async () => {
-    if (cart.length === 0) return alert("Keranjang kosong");
+    if (cart.length === 0) return alert("Cart kosong");
     if (paid < total) return alert("Uang bayar kurang");
 
     const res = await fetch("/api/sales", {
@@ -128,7 +127,8 @@ export default function SalesPage() {
 
     if (res.ok) {
       alert("Transaksi berhasil");
-      clearCart();
+      setCart([]);
+      setPaid(0);
       fetchMedicines();
       fetchSalesHistory();
     }
@@ -167,8 +167,7 @@ export default function SalesPage() {
                     </p>
                     <button
                       onClick={() => addToCart(m)}
-                      disabled={m.stock === 0}
-                      className="mt-2 w-full bg-blue-500 text-white rounded py-1 disabled:bg-gray-300"
+                      className="mt-2 w-full bg-blue-500 text-white rounded py-1"
                     >
                       + Tambah
                     </button>
@@ -179,50 +178,55 @@ export default function SalesPage() {
 
           {/* RIGHT */}
           <div className="border rounded p-4">
-            <h3 className="font-semibold mb-2">🛒 Keranjang</h3>
+            <h3 className="font-semibold mb-2">Keranjang</h3>
 
             {cart.length === 0 && (
-              <p className="text-sm text-gray-500">
+              <p className="text-gray-500 text-sm">
                 Keranjang masih kosong
               </p>
             )}
 
-            <table className="w-full text-sm">
-              <tbody>
-                {cart.map(item => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td className="flex items-center gap-2">
-                      <button
-                        onClick={() => updateQty(item.id, -1)}
-                        className="px-2 border rounded"
-                      >
-                        −
-                      </button>
-                      {item.qty}
-                      <button
-                        onClick={() => updateQty(item.id, 1)}
-                        className="px-2 border rounded"
-                        disabled={item.qty >= item.stock}
-                      >
-                        +
-                      </button>
-                    </td>
-                    <td>Rp {item.qty * item.price}</td>
-                    <td>
-                      <button
-                        onClick={() => removeFromCart(item.id)}
-                        className="text-red-500"
-                      >
-                        ❌
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {cart.map(item => (
+              <div
+                key={item.id}
+                className="flex justify-between items-center mb-2 text-sm"
+              >
+                <div>
+                  <p>{item.name}</p>
+                  <p className="text-gray-500">
+                    Rp {item.price * item.qty}
+                  </p>
+                </div>
 
-            <p className="mt-2 font-bold">Total: Rp {total}</p>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => decreaseQty(item.id)}
+                    className="border px-2"
+                  >
+                    -
+                  </button>
+                  <span className="w-6 text-center">
+                    {item.qty}
+                  </span>
+                  <button
+                    onClick={() => increaseQty(item.id)}
+                    className="border px-2"
+                  >
+                    +
+                  </button>
+                  <button
+                    onClick={() => removeItem(item.id)}
+                    className="text-red-500 ml-2"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+
+            <hr className="my-2" />
+
+            <p className="font-bold">Total: Rp {total}</p>
 
             <input
               type="number"
@@ -242,20 +246,15 @@ export default function SalesPage() {
             >
               Simpan Transaksi
             </button>
-
-            <button
-              onClick={clearCart}
-              className="mt-2 w-full text-sm text-red-600 underline"
-            >
-              Batalkan / Kosongkan Keranjang
-            </button>
           </div>
         </div>
       </div>
 
       {/* ================= RIWAYAT ================= */}
       <div>
-        <h3 className="text-lg font-bold mb-3">📜 Riwayat Transaksi</h3>
+        <h3 className="text-lg font-bold mb-3">
+          📜 Riwayat Transaksi
+        </h3>
 
         <table className="w-full border text-sm">
           <thead className="bg-gray-100">
@@ -277,7 +276,7 @@ export default function SalesPage() {
               >
                 <td className="border p-2">#{sale.id}</td>
                 <td className="border p-2">
-                  {new Date(sale.date).toLocaleString("id-ID")}
+                  {new Date(sale.date).toLocaleString()}
                 </td>
                 <td className="border p-2 font-semibold">
                   Rp {sale.total}

@@ -1,53 +1,23 @@
 import { NextResponse } from "next/server";
-import mysql from "mysql2/promise";
+import { pool } from "@/lib/db";
 
-const pool = mysql.createPool({
-  host: process.env.MYSQL_HOST,
-  user: process.env.MYSQL_USER,
-  password: process.env.MYSQL_PASSWORD,
-  database: process.env.MYSQL_DATABASE, // apotek_db
-});
+export async function POST(req: Request) {
+  const body = await req.json();
+  const { name, category, price, stock, expired_date } = body;
 
-export async function PATCH(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const id = Number(params.id);
-    const body = await req.json();
-    const add_stock = Number(body.add_stock);
+  // ambil id terakhir
+  const [last]: any = await pool.query(
+    "SELECT id FROM obat ORDER BY id DESC LIMIT 1"
+  );
 
-    console.log("PATCH ID:", id);
-    console.log("ADD STOCK:", add_stock);
+  const nextId = last.length > 0 ? last[0].id + 1 : 1;
+  const code = `OBT-${String(nextId).padStart(4, "0")}`;
 
-    if (!id || !add_stock || add_stock <= 0) {
-      return NextResponse.json(
-        { message: "Data tidak valid" },
-        { status: 400 }
-      );
-    }
+  await pool.query(
+    `INSERT INTO obat (code, name, category, price, stock, expired_date)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [code, name, category, price, stock, expired_date]
+  );
 
-    // ✅ GANTI KE medicines
-    const [result]: any = await pool.execute(
-      "UPDATE medicines SET stock = stock + ? WHERE id = ?",
-      [add_stock, id]
-    );
-
-    if (result.affectedRows === 0) {
-      return NextResponse.json(
-        { message: "Obat tidak ditemukan" },
-        { status: 404 }
-      );
-    }
-
-    return NextResponse.json({
-      message: "Stok berhasil ditambahkan",
-    });
-  } catch (error) {
-    console.error("ERROR PATCH OBAT:", error);
-    return NextResponse.json(
-      { message: "Gagal menambah stok" },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json({ message: "Obat berhasil ditambahkan" });
 }
